@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "VeeamTest": {
+      "commandName": "Project",
+      "commandLineArgs": "decompress veeam.gzip test.zip",
+      "workingDirectory": "C:\\Users\\mnagy\\Desktop"
+    }
+  }
+}
