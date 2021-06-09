@@ -22,10 +22,16 @@ namespace VeeamTest
 				switch (mode)
 				{
 					case "compress":
+						Console.WriteLine($"Compressing file {input}...");
 						(success, reason) = compressWithTempFiles(input, output, threads);
+						if (success)
+							Console.WriteLine($"File has been compressed to {output}");
 						break;
 					case "decompress":
+						Console.WriteLine($"Decompressing file {input}...");
 						(success, reason) = decompressWithTempFiles(input, output);
+						if (success)
+							Console.WriteLine($"File has been decompressed to {output}");
 						break;
 					default:
 						Console.WriteLine($"Unsupported mode {mode} detected");
@@ -299,6 +305,8 @@ namespace VeeamTest
 			}
 			finally
 			{
+				// clean up
+				tempDir.Refresh();
 				tempDir.Delete(recursive: true);
 			}
 
@@ -339,6 +347,7 @@ namespace VeeamTest
 					Directory.Delete(tempDirPath,recursive: true);
 
 				var tempDir = Directory.CreateDirectory(tempDirPath);
+
 				object[] locks = new object[threadCount];
 				int[] bytesRead = new int[threadCount];
 				long[] readTotal = new long[threadCount];
@@ -470,6 +479,7 @@ namespace VeeamTest
 				finally
 				{
 					// clean up
+					tempDir.Refresh();
 					tempDir.Delete(recursive: true);
 				}
 			}
