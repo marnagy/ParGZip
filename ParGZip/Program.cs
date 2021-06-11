@@ -7,6 +7,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
+using ParGZip;
+
 namespace VeeamTest
 {
 	class Program
@@ -40,7 +42,7 @@ namespace VeeamTest
 					{
 						(success, reason) = decompressWithTempFiles(input, output);
 					}
-					catch (Exception)
+					catch (Exception e)
 					{
 						success = false;
 						reason = "Decompression failed. Please, check your available disk space.";
@@ -131,11 +133,12 @@ namespace VeeamTest
 		{
 			Func<int, string> getTmpGZipFilePath = i => $"tmp_{i}.gzip";
 			Func<int, string> getTmpFilePath = i => $"tmp_{i}.txt";
-			string tempDirPath = Path.Join(Path.GetTempPath(), new Random().Next().ToString() );
+			var rand = new Random();
+			string tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
 			Console.WriteLine($"DirPath: {tempDirPath}");
 
 			while (Directory.Exists(tempDirPath))
-				tempDirPath = Path.Join(Path.GetTempPath(), new Random().Next().ToString() );
+				tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
 
 			var tempDir = Directory.CreateDirectory(tempDirPath);
 
@@ -202,116 +205,41 @@ namespace VeeamTest
 				}
 
 				// decompress files
-				var threads = new Thread[threadCount];
+				var decompVars = new DecompressVariable[threadCount];
 				for (int i = 0; i < threadCount; i++)
 				{
-					int index = i;
-					threads[i] = new Thread(new ThreadStart( () => {
-						int threadIndex = index;
-						byte[] buffer = new byte[bufferSize];
-						using (var gzip = new GZipStream(File.OpenRead(Path.Join(tempDirPath, getTmpGZipFilePath(threadIndex))), CompressionMode.Decompress))
-						{
-							using (var fs = File.OpenWrite( Path.Join(tempDirPath, getTmpFilePath(threadIndex)) ))
-							{
-								int read;
-								while ( (read = gzip.Read(buffer, 0, bufferSize) ) > 0)
-								{
-									fs.Write(buffer, 0, read);
-								}
-							
-							}
-						}
-					}));
-					threads[i].Start();
+					decompVars[i] = new DecompressVariable(
+						bufferSize,
+						fromPath: Path.Join(tempDirPath, getTmpGZipFilePath(i)),
+						toPath: Path.Join(tempDirPath, getTmpFilePath(i)));
+					decompVars[i].Thread.Start();
 				}
 				for (int i = 0; i < threadCount; i++)
 				{
-					threads[i].Join();
+					decompVars[i].Thread.Join();
 				}
 
-				//Console.WriteLine("File decompressed");
+				//Console.WriteLine("Files decompressed");
 				for (int i = 0; i < threadCount; i++)
 				{
 					File.Delete(Path.Join(tempDirPath, getTmpGZipFilePath(i)));
 				}
 				//Console.WriteLine($"GZip temp files deleted");
 
-				//Console.WriteLine("Dir files:");
-				//foreach (var file in tempDir.GetFiles())
-				//{
-				//	Console.WriteLine(file.Name);
-				//}
-
-				// merge files
-				var locks = new object[threadCount];
-				var bytesRead = new int[threadCount];
-				var buffers = new byte[threadCount][];
+				// merge decompressed files
+				var decompMergeVars = new DecompressMergeVariable[threadCount];
 				for (int i = 0; i < threadCount; i++)
 				{
-					locks[i] = new object();
-					buffers[i] = new byte[bufferSize];
-					int index = i;
-					threads[i] = new Thread(new ThreadStart( () =>
-					{
-						int threadIndex = index;
-						var threadLock = locks[threadIndex];
-						using (var fs = File.OpenRead( Path.Join(tempDirPath, getTmpFilePath(index)) ))
-						{
-							while (bytesRead[threadIndex] != -1)
-							{
-								lock (threadLock)
-								{
-									while (bytesRead[threadIndex] > 0)
-										Monitor.Wait(threadLock);
-
-									bytesRead[threadIndex] = fs.Read(buffers[threadIndex], 0, bufferSize);
-
-									if (bytesRead[threadIndex] == 0)
-										bytesRead[threadIndex] = -1;
-
-									Monitor.Pulse(threadLock);
-								}
-							}
-						}
-					}));
-					threads[i].Start();
+					decompMergeVars[i] = new DecompressMergeVariable(bufferSize,
+						Path.Join(tempDirPath, getTmpFilePath(i)));
+					decompMergeVars[i].Thread.Start();
 				}
 
-				var consumer = new Thread(new ThreadStart( () =>
-				{
-					bool[] allEnded = new bool[threadCount];
-					using (var ofs = File.Open(output, FileMode.CreateNew, FileAccess.Write))
-					{
-						while ( !allEnded.All(x => x) )
-						{
-							for (int i = 0; i < threadCount; i++)
-							{
-								if (allEnded[i])
-									break;
-
-								lock (locks[i])
-								{
-									while (bytesRead[i] == 0)
-										Monitor.Wait(locks[i]);
-
-									if (bytesRead[i] == -1)
-									{
-										allEnded[i] = true;
-										continue;
-									}
-
-									ofs.Write(buffers[i], 0, bytesRead[i]);
-									bytesRead[i] = 0;
-
-									Monitor.Pulse(locks[i]);
-								}
-							}
-						}
-					}
-				}));
+				var consumer = GetConsumerThread(decompMergeVars, output);
 				consumer.Start();
 
 				consumer.Join();
+				return (success: true, reason: string.Empty);
 			}
 			finally
 			{
@@ -319,8 +247,43 @@ namespace VeeamTest
 				tempDir.Refresh();
 				tempDir.Delete(recursive: true);
 			}
+		}
 
-			return (success: true, reason: string.Empty);
+		private static Thread GetConsumerThread(DecompressMergeVariable[] mergeVars, string outputPath)
+		{
+			int threadCount = mergeVars.Length;
+			return new Thread(new ThreadStart( () =>
+			{
+				bool[] allEnded = new bool[threadCount];
+				using (var ofs = File.Open(outputPath, FileMode.CreateNew, FileAccess.Write))
+				{
+					while ( !allEnded.All(x => x) )
+					{
+						for (int i = 0; i < threadCount; i++)
+						{
+							if (allEnded[i])
+								break;
+
+							lock (mergeVars[i])
+							{
+								while (mergeVars[i].BytesRead == 0)
+									Monitor.Wait(mergeVars[i]);
+
+								if (mergeVars[i].BytesRead == -1)
+								{
+									allEnded[i] = true;
+									continue;
+								}
+
+								ofs.Write(mergeVars[i].Buffer, 0, mergeVars[i].BytesRead);
+								mergeVars[i].BytesRead = 0;
+
+								Monitor.Pulse(mergeVars[i]);
+							}
+						}
+					}
+				}
+			}));
 		}
 
 		private static (bool success, string reason) compressWithTempFiles(string input, string output, int threadCount, int bufferSize = 1 << 20)
@@ -350,62 +313,57 @@ namespace VeeamTest
 			else
 			{
 				Func<int, string> getTmpFilePath = i => $"tmp_{i}.gzip";
-				string tempDirPath = Path.Join(Path.GetTempPath(), new Random().Next().ToString() );
+				var rand = new Random();
+				string tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
 				Console.WriteLine($"DirPath: {tempDirPath}");
 
-				if (Directory.Exists(tempDirPath))
-					Directory.Delete(tempDirPath,recursive: true);
+				if ( Directory.Exists(tempDirPath) )
+					tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
 
 				var tempDir = Directory.CreateDirectory(tempDirPath);
 
-				object[] locks = new object[threadCount];
-				int[] bytesRead = new int[threadCount];
-				long[] readTotal = new long[threadCount];
-				byte[][] buffers = new byte[threadCount][];
-				var threads = new Thread[threadCount];
-				//var fileReaders = new FileStream[threadCount];
 				try
 				{
+					var compressionThreadVars = new CompressThreadVariable[threadCount];
 					for (int i = 0; i < threadCount; i++)
 					{
-						Console.WriteLine($"Initializing GZip thread {i}...");
-						locks[i] = new object();
-						buffers[i] = new byte[bufferSize];
-						int index = i;
-						threads[i] = new Thread(new ThreadStart( () =>
-						{
-							Console.WriteLine($"Thread {index} started");
-							int threadIndex = index;
-							var threadLock = locks[threadIndex];
-							using (var gzip = new GZipStream(
-								new FileStream(Path.Join(tempDirPath, getTmpFilePath(threadIndex)), FileMode.Create),
-								CompressionMode.Compress))
-							{
-								while (true)
-								{
-									lock (threadLock)
-									{
-										while (bytesRead[threadIndex] == 0)
-										{
-											Monitor.Wait(threadLock);
-										}
-
-										if (bytesRead[threadIndex] == -1)
-											break;
-
-										gzip.Write(buffers[threadIndex], 0, bytesRead[threadIndex]);
-										readTotal[threadIndex] += bytesRead[threadIndex];
-										bytesRead[threadIndex] = 0;
-
-										Monitor.Pulse(threadLock);
-									}
-								}
-							}
-						} ));
-						threads[i].Start();
+						compressionThreadVars[i] = new CompressThreadVariable(
+							bufferSize, Path.Join(tempDirPath, getTmpFilePath(i)) );
+						compressionThreadVars[i].Thread.Start();
 					}
+
 					// producer thread
-					var producer = new Thread(new ThreadStart( () =>
+					var producer = GetProducerThread(input, threadCount, bufferSize,
+						compressionThreadVars); 
+					producer.Start();
+
+					producer.Join();
+					for (int i = 0; i < threadCount; i++)
+					{
+						compressionThreadVars[i].Thread.Join();
+					}
+
+					SaveCompressed(
+						threadCount,
+						bufferSize,
+						output,
+						tempDir.GetFiles()
+						);
+
+					return (success: true, reason: string.Empty);
+				}
+				finally
+				{
+					// clean up
+					tempDir.Refresh();
+					tempDir.Delete(recursive: true);
+				}
+			}
+		}
+
+		private static Thread GetProducerThread(string input, int threadCount, int bufferSize, CompressThreadVariable[] compVars)
+		{
+			return new Thread(new ThreadStart( () =>
 					{
 						using ( var inS = File.Open(input, FileMode.Open, FileAccess.Read))
 						{
@@ -417,80 +375,55 @@ namespace VeeamTest
 									if (allEnded[i])
 										break;
 
-									lock (locks[i])
+									lock (compVars[i])
 									{
-										while (bytesRead[i] != 0)
+										while (compVars[i].BytesRead != 0)
 										{
-											Monitor.Wait(locks[i]);
+											Monitor.Wait(compVars[i]);
 										}
 
-										bytesRead[i] = inS.Read(buffers[i], 0, bufferSize);
-										if (bytesRead[i] == 0)
+										compVars[i].BytesRead = inS.Read(compVars[i].Buffer, 0, bufferSize);
+										if (compVars[i].BytesRead == 0)
 										{
-											bytesRead[i] = -1;
+											compVars[i].BytesRead = -1;
 											allEnded[i] = true;
 										}
 
-										Monitor.Pulse(locks[i]);
+										Monitor.Pulse(compVars[i]);
 									}
 								}
 							}
 						}
 					}));
-					producer.Start();
+		}
 
-					producer.Join();
-					for (int i = 0; i < threadCount; i++)
-					{
-						threads[i].Join();
-					}
-					Console.WriteLine($"Files in temp dir:");
-					foreach (var file in tempDir.EnumerateFiles())
-					{
-						Console.WriteLine($"file {file.Name}");
-					}
-					for (int i = 0; i < threadCount; i++)
-					{
-						bytesRead[i] = 0;
-					}
-				
-					using ( var os = new FileStream(output, FileMode.CreateNew, FileAccess.Write))
-					{
-						using (var bos = new BinaryWriter(os, Encoding.ASCII, leaveOpen: true))
-						{
-							bos.Write( threadCount ); // int
-							bos.Write( bufferSize ); // int
-							var files = tempDir.GetFiles();
-							Array.Sort(files, (f1, f2) => string.Compare(f1.Name, f2.Name));
-							for (int i = 0; i < threadCount; i++)
-							{
-								//Console.WriteLine($"Saving file length of {files[i].Name}");
-								bos.Write( files[i].Length ); // long
-								//bos.Write( readTotal[i] ); // long
-							}
-						}
-
-						byte[] buffer = new byte[bufferSize];
-						for (int i = 0; i < threadCount; i++)
-						{
-							using (var fs = new FileStream(Path.Join(tempDirPath, getTmpFilePath(i)), FileMode.Open, FileAccess.Read))
-							{
-								int read;
-								while ( (read = fs.Read(buffer, 0, bufferSize)) > 0)
-								{
-									os.Write(buffer, 0, read);
-								}
-							}
-						}
-					}
-
-					return (success: true, reason: string.Empty);
-				}
-				finally
+		private static void SaveCompressed(int threadCount, int bufferSize, string outputPath, FileInfo[] files)
+		{
+			using ( var os = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write))
+			{
+				using (var bos = new BinaryWriter(os, Encoding.ASCII, leaveOpen: true))
 				{
-					// clean up
-					tempDir.Refresh();
-					tempDir.Delete(recursive: true);
+					bos.Write( threadCount ); // int32
+					bos.Write( bufferSize ); // int32
+					Array.Sort(files, (f1, f2) => string.Compare(f1.Name, f2.Name));
+					for (int i = 0; i < threadCount; i++)
+					{
+						bos.Write( files[i].Length ); // int64
+						//bos.Write( readTotal[i] ); // int64
+					}
+				}
+
+				byte[] buffer = new byte[bufferSize];
+				for (int i = 0; i < threadCount; i++)
+				{
+					using (var fs = new FileStream(files[i].FullName, FileMode.Open, FileAccess.Read))
+					{
+						int read;
+						while ( (read = fs.Read(buffer, 0, bufferSize)) > 0)
+						{
+							os.Write(buffer, 0, read);
+						}
+					}
 				}
 			}
 		}
