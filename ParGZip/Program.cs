@@ -15,43 +15,53 @@ namespace VeeamTest
 		{
 			(string mode, string input, string output, int threads) = LoadAndCheckArgs(args);
 
-			try
+			bool success = false;
+			string reason = string.Empty;
+			switch (mode)
 			{
-				bool success = false;
-				string reason = string.Empty;
-				switch (mode)
-				{
-					case "compress":
-						Console.WriteLine($"Compressing file {input}...");
+				case "compress":
+					Console.WriteLine($"Compressing file {input}...");
+					try
+					{
 						(success, reason) = compressWithTempFiles(input, output, threads);
-						if (success)
-							Console.WriteLine($"File has been compressed to {output}");
+					}
+					catch (Exception)
+					{
+						success = false;
+						reason = "Compression failed. Please, check your available disk space.";
 						break;
-					case "decompress":
-						Console.WriteLine($"Decompressing file {input}...");
+					}
+					if (success)
+						Console.WriteLine($"File has been compressed to {output}");
+					break;
+				case "decompress":
+					Console.WriteLine($"Decompressing file {input}...");
+					try
+					{
 						(success, reason) = decompressWithTempFiles(input, output);
-						if (success)
-							Console.WriteLine($"File has been decompressed to {output}");
+					}
+					catch (Exception)
+					{
+						success = false;
+						reason = "Decompression failed. Please, check your available disk space.";
 						break;
-					default:
-						Console.WriteLine($"Unsupported mode {mode} detected");
-						Console.WriteLine("Choose one of the supported modes, please: compress, decompress");
-						Environment.Exit(1);
-						break;
-				}
-				if (success)
-					Environment.Exit(0);
-				else
-				{
-
-					Console.WriteLine("Program failed due to the following reason:");
-					Console.WriteLine(reason);
+					}
+					if (success)
+						Console.WriteLine($"File has been decompressed to {output}");
+					break;
+				default:
+					Console.WriteLine($"Unsupported mode {mode} detected");
+					Console.WriteLine("Choose one of the supported modes, please: compress, decompress");
 					Environment.Exit(1);
-				}
+					break;
 			}
-			catch (Exception e)
+			if (success)
+				Environment.Exit(0);
+			else
 			{
-				Console.WriteLine(e.Message);
+
+				Console.WriteLine("Program failed due to the following reason:");
+				Console.WriteLine(reason);
 				Environment.Exit(1);
 			}
 		}
@@ -454,7 +464,7 @@ namespace VeeamTest
 							Array.Sort(files, (f1, f2) => string.Compare(f1.Name, f2.Name));
 							for (int i = 0; i < threadCount; i++)
 							{
-								Console.WriteLine($"Saving file length of {files[i].Name}");
+								//Console.WriteLine($"Saving file length of {files[i].Name}");
 								bos.Write( files[i].Length ); // long
 								//bos.Write( readTotal[i] ); // long
 							}
