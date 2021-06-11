@@ -135,7 +135,7 @@ namespace VeeamTest
 			Func<int, string> getTmpFilePath = i => $"tmp_{i}.txt";
 			var rand = new Random();
 			string tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
-			Console.WriteLine($"DirPath: {tempDirPath}");
+			//Console.WriteLine($"DirPath: {tempDirPath}");
 
 			while (Directory.Exists(tempDirPath))
 				tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
@@ -163,8 +163,8 @@ namespace VeeamTest
 							}
 						}
 					}
-					Console.WriteLine($"Using {threadCount} threads to decompress");
-					Console.WriteLine($"Using BufferSize: {bufferSize} B");
+					//Console.WriteLine($"Using {threadCount} threads to decompress");
+					//Console.WriteLine($"Using BufferSize: {bufferSize} B");
 
 					if (threadCount == 1)
 					{
@@ -315,7 +315,7 @@ namespace VeeamTest
 				Func<int, string> getTmpFilePath = i => $"tmp_{i}.gzip";
 				var rand = new Random();
 				string tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
-				Console.WriteLine($"DirPath: {tempDirPath}");
+				//Console.WriteLine($"DirPath: {tempDirPath}");
 
 				if ( Directory.Exists(tempDirPath) )
 					tempDirPath = Path.Join(Path.GetTempPath(), rand.Next().ToString() );
