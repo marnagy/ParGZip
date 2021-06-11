@@ -205,10 +205,10 @@ namespace VeeamTest
 				}
 
 				// decompress files
-				var decompVars = new DecompressVariables[threadCount];
+				var decompVars = new DecompressVariable[threadCount];
 				for (int i = 0; i < threadCount; i++)
 				{
-					decompVars[i] = new DecompressVariables(
+					decompVars[i] = new DecompressVariable(
 						bufferSize,
 						fromPath: Path.Join(tempDirPath, getTmpGZipFilePath(i)),
 						toPath: Path.Join(tempDirPath, getTmpFilePath(i)));
@@ -227,10 +227,10 @@ namespace VeeamTest
 				//Console.WriteLine($"GZip temp files deleted");
 
 				// merge decompressed files
-				var decompMergeVars = new DecompressMergeVariables[threadCount];
+				var decompMergeVars = new DecompressMergeVariable[threadCount];
 				for (int i = 0; i < threadCount; i++)
 				{
-					decompMergeVars[i] = new DecompressMergeVariables(bufferSize,
+					decompMergeVars[i] = new DecompressMergeVariable(bufferSize,
 						Path.Join(tempDirPath, getTmpFilePath(i)));
 					decompMergeVars[i].Thread.Start();
 				}
@@ -249,7 +249,7 @@ namespace VeeamTest
 			}
 		}
 
-		private static Thread GetConsumerThread(DecompressMergeVariables[] mergeVars, string outputPath)
+		private static Thread GetConsumerThread(DecompressMergeVariable[] mergeVars, string outputPath)
 		{
 			int threadCount = mergeVars.Length;
 			return new Thread(new ThreadStart( () =>
@@ -324,10 +324,10 @@ namespace VeeamTest
 
 				try
 				{
-					var compressionThreadVars = new CompressThreadVariables[threadCount];
+					var compressionThreadVars = new CompressThreadVariable[threadCount];
 					for (int i = 0; i < threadCount; i++)
 					{
-						compressionThreadVars[i] = new CompressThreadVariables(
+						compressionThreadVars[i] = new CompressThreadVariable(
 							bufferSize, Path.Join(tempDirPath, getTmpFilePath(i)) );
 						compressionThreadVars[i].Thread.Start();
 					}
@@ -361,7 +361,7 @@ namespace VeeamTest
 			}
 		}
 
-		private static Thread GetProducerThread(string input, int threadCount, int bufferSize, CompressThreadVariables[] compVars)
+		private static Thread GetProducerThread(string input, int threadCount, int bufferSize, CompressThreadVariable[] compVars)
 		{
 			return new Thread(new ThreadStart( () =>
 					{

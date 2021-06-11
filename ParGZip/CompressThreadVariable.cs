@@ -9,23 +9,10 @@ using System.Threading.Tasks;
 
 namespace ParGZip
 {
-	public class CompressThreadVariables
+	public class CompressThreadVariable : ThreadVariable
 	{
-		public int BytesRead { get; set; }
-		public long ReadTotal { get; private set; }
-		public byte[] Buffer { get; }
-		public Thread Thread { get; }
-		//private readonly string tempOutFilePath;
-
-		public CompressThreadVariables(int bufferSize, string tempOutFilePath)
+		public CompressThreadVariable(int bufferSize, string tempOutFilePath) : base(bufferSize)
 		{
-			if (bufferSize <= 0)
-				throw new ArgumentException("Cannot have buffer of non-positive size.");
-
-			//this.tempOutFilePath = tempOutFilePath;
-			BytesRead = 0;
-			ReadTotal = 0;
-			Buffer = new byte[bufferSize];
 			Thread = new Thread(new ThreadStart( () => ThreadAction(tempOutFilePath) ));
 		}
 		private void ThreadAction(string tempFilePath)

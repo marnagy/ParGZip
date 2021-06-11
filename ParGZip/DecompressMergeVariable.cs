@@ -8,17 +8,10 @@ using System.Threading.Tasks;
 
 namespace ParGZip
 {
-	public class DecompressMergeVariables
+	public class DecompressMergeVariable : ThreadVariable
 	{
-		public int BytesRead { get; set; }
-		public byte[] Buffer { get; }
-		public readonly Thread Thread;
-		public DecompressMergeVariables(int bufferSize, string fromPath)
+		public DecompressMergeVariable(int bufferSize, string fromPath) : base(bufferSize)
 		{
-			if (bufferSize <= 0)
-				throw new ArgumentException("Cannot create a buffer of non-positive size");
-
-			Buffer = new byte[bufferSize];
 			Thread = new Thread(new ThreadStart( () => ThreadAction(fromPath) ));
 		}
 
