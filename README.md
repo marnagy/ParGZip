@@ -55,7 +55,7 @@ We read thread count and buffer size from source file followed by simple single-
 
 ## Default Values
 
-- threads: a half of logical processors
+- threads: a half of logical processors available
 
 - buffer size: 1 MiB = 2<sup>20</sup> B
 
