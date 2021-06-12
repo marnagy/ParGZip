@@ -2,6 +2,12 @@
 
 ------
 
+## Disclaimer
+
+This implementation creates temporary files that get deleted after program is done. 
+
+This means **this implementation's speed is highly dependent on your main drive's R/W speed.**
+
 ## Architecture
 
 ### Arguments
